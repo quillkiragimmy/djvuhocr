@@ -12,7 +12,7 @@ my $djvu_script = '/tmp/.djvu_script';
 if ( $#ARGV < 0 ) {
 	print <<"MAN_END";
 Usage: 
-	djvuocr.pl [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
+	djvuhocr [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
 * For available language codes, please check "man tesseract".
 * Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
 MAN_END
