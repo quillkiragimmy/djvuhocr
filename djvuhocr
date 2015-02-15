@@ -1,0 +1,135 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use Getopt::Std;
+
+$| = 1;
+my $imgtmp = '/tmp/.djvuimgtmp';
+my $ocrtmp = '/tmp/.ocrlist';
+my $djvu_script = '/tmp/.djvu_script';
+
+if ( $#ARGV < 0 ) {
+	print <<"MAN_END";
+Usage: 
+	djvuocr.pl [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
+* For available language codes, please check "man tesseract".
+* Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
+MAN_END
+	;
+	exit 0 ;
+#	$djvu_src = '~/ebooks/music/Mark Levine - Jazz Theory.djvu';
+}
+
+my %options = ();
+getopts( "l:j:s:e:q", \%options );
+
+my $lang = $options{l} || "eng";
+my $thread_num = $options{j} || 1;
+my $page_start = $options{s} || 1;
+my $page_last;
+my @djvu_list = @ARGV if $ARGV[0];
+
+foreach my $djvu_src ( @djvu_list ) {
+	print "processing '$djvu_src' with $thread_num threads.\n";
+
+	$page_last = $options{e} || `djvused "$djvu_src" -e 'n'`;
+	chomp $page_last;
+	my $page_num = $page_last - $page_start + 1;
+	print ( $page_num, " pages: $page_start - $page_last\n" );
+
+	my $thread_count = 0;
+	my $page_count = 0;
+	foreach my $page ( $page_start .. $page_last ) {
+		if ( $thread_count >= $thread_num ) {
+			wait;
+			$thread_count--;
+			$page_count++;
+			print "progress: $page_count / $page_num.\n";
+		}
+		ocr ( $djvu_src, $page );
+		$thread_count++;
+
+	}
+
+	while ( wait() != -1 ){
+		$page_count++;
+		print "progress: $page_count / $page_num.\n";
+	}
+
+#	replacing text layer.
+	open ( my $DJVUSCRIPT, ">", $djvu_script );
+	foreach ( $page_start .. $page_last ) {
+		print $DJVUSCRIPT "select $_; remove-txt; set-txt $ocrtmp$_;\n";
+	}
+	close $DJVUSCRIPT;
+	print "embedding text layer on pages.\n";
+	`djvused "$djvu_src" -f "$djvu_script" -s`;
+
+#	cleaning up for ocrtmos & djvu script.
+	my @junks = ( $page_start .. $page_last );
+	map { s/^/$ocrtmp/ } @junks;
+	unlink ( @junks, $djvu_script );
+
+}
+
+
+sub ocr {# page.
+	my $pid = fork();
+	return if ( $pid );
+
+	my ( $djvu_source, $page ) = @_;
+	`ddjvu -format=tiff -page="$page" "$djvu_source" $imgtmp$page`;
+
+	open ( my $OCR , ">", "$ocrtmp$page" );
+	my $hocr = `tesseract $imgtmp$page stdout -l $lang hocr 2>/dev/null`;
+	my $djvutxt = hocr_to_djvutxt ( $hocr, );
+
+	print $OCR "$djvutxt";
+	close ($OCR);
+	unlink "$imgtmp$page";
+
+	exit;
+
+}
+
+
+sub hocr_to_djvutxt {
+	my $hocr = shift;
+	$hocr =~ s/\n//g;
+	$hocr =~ s/<\?xml.*?>//g;
+	$hocr =~ s/<!DOCTYPE.*?>//g;
+
+	$hocr =~ s/<head>.*<\/head>//g;
+	$hocr =~ s/<\/?html.*?>//g;
+	$hocr =~ s/<\/?body>//g;
+
+	$hocr =~ s/<div class='ocr_page'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(page $1\n/g;
+	$hocr =~ s/<div class='ocr_carea'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(column $1\n/g;
+	$hocr =~ s/<p class='ocr_par'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(para $1\n/g;
+	$hocr =~ s/<span class='ocr_line'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(line $1\n/g;
+	$hocr =~ s/<span class='ocrx_word'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>(.*?)<\/span>/(word $1 "$2")\n/g;
+	$hocr =~ s/<\/span>/)\n/g;
+	$hocr =~ s/<\/p>/)\n/g;
+	$hocr =~ s/<\/div>/)\n/g;
+	$hocr =~ s/<.*?>//g;
+	$hocr =~ s/\\/|/g;
+	$hocr =~ s/&quot;/”/g;
+	$hocr =~ s/&#39;/'/g;
+
+	# dirty fix of the 'upsidedown' problem. flip y.
+	my @arr = split "\n", $hocr;
+	my $page_height = 0;
+
+	foreach ( @arr ) {
+		if ( /^.+page\s(\d+)\s(\d+)\s(\d+)\s(\d+)$/ ) {
+			$page_height = $4;
+		}
+		elsif ( /^(.+?)\s(\d+)\s(\d+)\s(\d+)\s(\d+)(.*)$/ ) {
+			$_ = join ( ' ', ($1, $2, $page_height-$3, $4 , $page_height-$5, $6) );
+		}
+		else {
+		}
+	}
+	return join ( "\n", @arr );
+}
