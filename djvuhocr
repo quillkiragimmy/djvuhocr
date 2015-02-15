@@ -12,7 +12,12 @@ my $djvu_script = '/tmp/.djvu_script';
 if ( $#ARGV < 0 ) {
 	print <<"MAN_END";
 Usage: 
-	djvuhocr [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
+	djvuhocr [ -d ] [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
+
+	-d: tesseract debug masseges.
+	-l: default is 'eng'.
+	-j: default is '1'.
+
 * For available language codes, please check "man tesseract".
 * Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
 MAN_END
@@ -22,10 +27,12 @@ MAN_END
 }
 
 my %options = ();
-getopts( "l:j:s:e:q", \%options );
+getopts( "l:j:s:e:d", \%options );
 
-my $lang = $options{l} || "eng";
+
+my $tess_err = $options{d}? '' : '2>/dev/null';
 my $thread_num = $options{j} || 1;
+my $lang = $options{l} || "eng";
 my $page_start = $options{s} || 1;
 my $page_last;
 my @djvu_list = @ARGV if $ARGV[0];
@@ -82,7 +89,7 @@ sub ocr {# page.
 	`ddjvu -format=tiff -page="$page" "$djvu_source" $imgtmp$page`;
 
 	open ( my $OCR , ">", "$ocrtmp$page" );
-	my $hocr = `tesseract $imgtmp$page stdout -l $lang hocr 2>/dev/null`;
+	my $hocr = `tesseract $imgtmp$page stdout -l $lang hocr $tess_err`;
 	my $djvutxt = hocr_to_djvutxt ( $hocr, );
 
 	print $OCR "$djvutxt";
