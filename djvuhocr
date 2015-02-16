@@ -9,26 +9,14 @@ my $imgtmp = '/tmp/.djvuimgtmp';
 my $ocrtmp = '/tmp/.ocrlist';
 my $djvu_script = '/tmp/.djvu_script';
 
-if ( $#ARGV < 0 ) {
-	print <<"MAN_END";
-Usage: 
-	djvuhocr [ -d ] [ -j <thread_number> ] [ -l <language_code> ] [ -s <start_page> ] [ -e <last_page> ] djvufile ... 
+my %options = ();
+getopts( "l:j:s:e:dh", \%options );
 
-	-d: tesseract debug masseges.
-	-l: default is 'eng'.
-	-j: default is '1'.
-
-* For available language codes, please check "man tesseract".
-* Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
-MAN_END
-	;
+if ( $#ARGV < 0 or $options{h} ) {
+	manpage ();
 	exit 0 ;
 #	$djvu_src = '~/ebooks/music/Mark Levine - Jazz Theory.djvu';
 }
-
-my %options = ();
-getopts( "l:j:s:e:d", \%options );
-
 
 my $tess_err = $options{d}? '' : '2>/dev/null';
 my $thread_num = $options{j} || 1;
@@ -65,7 +53,7 @@ foreach my $djvu_src ( @djvu_list ) {
 	}
 
 #	replacing text layer.
-	open ( my $DJVUSCRIPT, ">", $djvu_script );
+	open ( my $DJVUSCRIPT, ">", $djvu_script ) || die "can't open '$djvu_script': $!";
 	foreach ( $page_start .. $page_last ) {
 		print $DJVUSCRIPT "select $_; remove-txt; set-txt $ocrtmp$_;\n";
 	}
@@ -88,12 +76,12 @@ sub ocr {# page.
 	my ( $djvu_source, $page ) = @_;
 	`ddjvu -format=tiff -page="$page" "$djvu_source" $imgtmp$page`;
 
-	open ( my $OCR , ">", "$ocrtmp$page" );
+	open ( my $OCR , ">", "$ocrtmp$page" ) || die "can't open '$ocrtmp': $!";
 	my $hocr = `tesseract $imgtmp$page stdout -l $lang hocr $tess_err`;
-	my $djvutxt = hocr_to_djvutxt ( $hocr, );
+	my $djvutxt = hocr_to_djvutxt ( $hocr );
 
 	print $OCR "$djvutxt";
-	close ($OCR);
+	close $OCR;
 	unlink "$imgtmp$page";
 
 	exit;
@@ -104,23 +92,16 @@ sub ocr {# page.
 sub hocr_to_djvutxt {
 	my $hocr = shift;
 	$hocr =~ s/\n//g;
-	$hocr =~ s/<\?xml.*?>//g;
-	$hocr =~ s/<!DOCTYPE.*?>//g;
-
-	$hocr =~ s/<head>.*<\/head>//g;
-	$hocr =~ s/<\/?html.*?>//g;
-	$hocr =~ s/<\/?body>//g;
+	$hocr =~ s/.*<body>(.*)<\/body>.*/$1/;
 
 	$hocr =~ s/<div class='ocr_page'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(page $1\n/g;
 	$hocr =~ s/<div class='ocr_carea'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(column $1\n/g;
 	$hocr =~ s/<p class='ocr_par'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(para $1\n/g;
 	$hocr =~ s/<span class='ocr_line'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>/(line $1\n/g;
 	$hocr =~ s/<span class='ocrx_word'.*?bbox (\d+\s\d+\s\d+\s\d+).*?>(.*?)<\/span>/(word $1 "$2")\n/g;
-	$hocr =~ s/<\/span>/)\n/g;
-	$hocr =~ s/<\/p>/)\n/g;
-	$hocr =~ s/<\/div>/)\n/g;
+	$hocr =~ s/<\/(span|p|div)>/)\n/g;
 	$hocr =~ s/<.*?>//g;
-	$hocr =~ s/\\/|/g;
+	$hocr =~ s/\\/\\\\/g;
 	$hocr =~ s/&quot;/”/g;
 	$hocr =~ s/&#39;/'/g;
 
@@ -140,3 +121,20 @@ sub hocr_to_djvutxt {
 	}
 	return join ( "\n", @arr );
 }
+
+sub manpage {
+	print <<"MAN_END";
+Usage:
+	djvuhocr [-hd] [-j <thread_number>] [-l <language_code>] [-s <start_page>] [-e <last_page>] djvufile ...
+
+	-h: print this help.
+	-d: tesseract debug masseges.
+	-l: default is 'eng'.
+	-j: default is '1'.
+
+* For available language codes, please check "man tesseract".
+* Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
+MAN_END
+	;
+}
+
