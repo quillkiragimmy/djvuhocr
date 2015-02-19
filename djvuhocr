@@ -2,33 +2,41 @@
 use strict;
 use warnings;
 
-use Getopt::Std;
+use Getopt::Long 'GetOptions';
+use Pod::Usage;
 
 $| = 1;
 my $imgtmp = '/tmp/.djvuimgtmp';
 my $ocrtmp = '/tmp/.ocrlist';
 my $djvu_script = '/tmp/.djvu_script';
 
-my %options = ();
-getopts( "l:j:s:e:dh", \%options );
+GetOptions (
+	'language|l=s' => \my $lang,
+	'help|h' => \my $help,
+	'debug|d' => \my $debug,
+	'job|j=i' => \my $thread_num,
+	'start_page|s=i' => \my $page_start,
+	'last_page|e=i' => \my $page_last_force,
+) or pod2usage ( -verbose => 1 );
 
-if ( $#ARGV < 0 or $options{h} ) {
-	manpage ();
+$lang ||= 'eng';
+my $tess_err = $debug? '' : '2>/dev/null';
+$thread_num ||= 1;
+$page_start ||= 1;
+
+if ( $#ARGV < 0 or $help ) {
+	pod2usage ( -verbose => 2 );
 	exit 0 ;
 #	$djvu_src = '~/ebooks/music/Mark Levine - Jazz Theory.djvu';
 }
 
-my $tess_err = $options{d}? '' : '2>/dev/null';
-my $thread_num = $options{j} || 1;
-my $lang = $options{l} || "eng";
-my $page_start = $options{s} || 1;
 my $page_last;
 my @djvu_list = @ARGV if $ARGV[0];
 
 foreach my $djvu_src ( @djvu_list ) {
 	print "processing '$djvu_src' with $thread_num threads.\n";
 
-	$page_last = $options{e} || `djvused "$djvu_src" -e 'n'`;
+	$page_last = $page_last_force || `djvused "$djvu_src" -e 'n'`;
 	chomp $page_last;
 	my $page_num = $page_last - $page_start + 1;
 	print ( $page_num, " pages: $page_start - $page_last\n" );
@@ -122,19 +130,43 @@ sub hocr_to_djvutxt {
 	return join ( "\n", @arr );
 }
 
-sub manpage {
-	print <<"MAN_END";
-Usage:
-	djvuhocr [-hd] [-j <thread_number>] [-l <language_code>] [-s <start_page>] [-e <last_page>] djvufile ...
+__END__
+=head1 NAME
 
-	-h: print this help.
-	-d: tesseract debug masseges.
-	-l: default is 'eng'.
-	-j: default is '1'.
+djvuhocr - apply tesseract OCR result to Djvu files.
 
-* For available language codes, please check "man tesseract".
-* Any bug report will be welcome at 'quillkiragimmy\@gmail.com'.
-MAN_END
-	;
-}
+
+=head1 SYNOPSIS
+
+djvuhocr [-hd] [-j <thread_number>] [-l <language_code>] [-s <start_page>] [-e <last_page>] djvufile ...
+
+
+=head1 OPTIONS
+
+=over 16
+
+=item B<-h, --help>
+
+print this help.
+
+=item B<-d, --debug>
+
+tesseract debug masseges.
+
+=item B<-l, --language = I<laguage>>
+
+default is 'eng'.
+For available language codes, please check "man tesseract".
+
+=item B<-j, --job = I<thread_number>>
+
+default is '1'.
+
+=back
+
+=head1 AUTHOR
+
+Any bug report will be welcome at 'quillkiragimmy@gmail.com'.
+
+=cut
 
